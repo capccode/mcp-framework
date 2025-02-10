@@ -1,1 +1,3 @@
-export { generateIndexTs as mainTemplate } from './config.js';
+import { generateIndexTs } from './config.js';
+
+export { generateIndexTs };

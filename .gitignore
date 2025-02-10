@@ -6,3 +6,4 @@ README
 dist
 node_modules
 /cursor_docs/*
+/test-vault/*

@@ -5,7 +5,8 @@ import prompts from "prompts";
 import { generateReadme } from "./templates/readme.js";
 import { generateLogger, generateComponentLoader } from "./templates/utils.js";
 import { generateExampleTool, generateExamplePrompt, generateExampleResource } from "./templates/components.js";
-import { generatePackageJson, generateTsConfig, generateGitIgnore, generateIndexTs } from "./templates/config.js";
+import { generatePackageJson, generateTsConfig, generateGitIgnore } from "./templates/config.js";
+import { generateIndexTs } from "./templates/index.js";
 import { toPascalCase } from "../utils/string-utils.js";
 
 export async function createProject(name?: string) {
