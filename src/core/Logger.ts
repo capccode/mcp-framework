@@ -4,23 +4,39 @@ import { mkdir } from "fs/promises";
 
 export class Logger {
   private static instance: Logger;
-  private logStream: WriteStream;
+  private logStream!: WriteStream;
   private logFilePath: string;
+  private initialized = false;
 
   private constructor() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const logDir = "logs";
+    this.logFilePath = join(logDir, `mcp-server-${timestamp}.log`);
 
-    mkdir(logDir, { recursive: true }).catch((err) => {
-      process.stderr.write(`Failed to create logs directory: ${err}\n`);
+    this.initializeLogger(logDir).catch((error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`Failed to initialize logger: ${errorMessage}\n`);
     });
 
-    this.logFilePath = join(logDir, `mcp-server-${timestamp}.log`);
-    this.logStream = createWriteStream(this.logFilePath, { flags: "a" });
+    const handleExit = (signal: string) => {
+      this.close();
+      process.exit(signal === 'SIGINT' ? 130 : 0);
+    };
 
     process.on("exit", () => this.close());
-    process.on("SIGINT", () => this.close());
-    process.on("SIGTERM", () => this.close());
+    process.on("SIGINT", () => handleExit('SIGINT'));
+    process.on("SIGTERM", () => handleExit('SIGTERM'));
+  }
+
+  private async initializeLogger(logDir: string): Promise<void> {
+    try {
+      await mkdir(logDir, { recursive: true });
+      this.logStream = createWriteStream(this.logFilePath, { flags: "a" });
+      this.initialized = true;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create logs directory: ${errorMessage}`);
+    }
   }
 
   public static getInstance(): Logger {
@@ -38,10 +54,24 @@ export class Logger {
     return `[${this.getTimestamp()}] [${level}] ${message}\n`;
   }
 
+  private writeLog(formattedMessage: string): void {
+    if (!this.initialized) {
+      process.stderr.write(formattedMessage);
+      return;
+    }
+
+    try {
+      this.logStream.write(formattedMessage);
+      process.stderr.write(formattedMessage);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`Failed to write to log file: ${errorMessage}\n`);
+      process.stderr.write(formattedMessage);
+    }
+  }
+
   public info(message: string): void {
-    const formattedMessage = this.formatMessage("INFO", message);
-    this.logStream.write(formattedMessage);
-    process.stderr.write(formattedMessage);
+    this.writeLog(this.formatMessage("INFO", message));
   }
 
   public log(message: string): void {
@@ -49,26 +79,25 @@ export class Logger {
   }
 
   public error(message: string): void {
-    const formattedMessage = this.formatMessage("ERROR", message);
-    this.logStream.write(formattedMessage);
-    process.stderr.write(formattedMessage);
+    this.writeLog(this.formatMessage("ERROR", message));
   }
 
   public warn(message: string): void {
-    const formattedMessage = this.formatMessage("WARN", message);
-    this.logStream.write(formattedMessage);
-    process.stderr.write(formattedMessage);
+    this.writeLog(this.formatMessage("WARN", message));
   }
 
   public debug(message: string): void {
-    const formattedMessage = this.formatMessage("DEBUG", message);
-    this.logStream.write(formattedMessage);
-    process.stderr.write(formattedMessage);
+    this.writeLog(this.formatMessage("DEBUG", message));
   }
 
   public close(): void {
-    if (this.logStream) {
-      this.logStream.end();
+    if (this.initialized && this.logStream) {
+      try {
+        this.logStream.end();
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`Failed to close log stream: ${errorMessage}\n`);
+      }
     }
   }
 

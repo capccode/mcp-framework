@@ -20,24 +20,25 @@ Get started fast with mcp-framework ⚡⚡⚡
 ### Using the CLI (Recommended)
 
 ```bash
-# Install the framework globally
-npm install -g mcp-framework
-
-# Create a new MCP server project
-mcp create my-mcp-server
-
-# Navigate to your project
+# Using npx (easiest)
+npx -y mcp-framework create my-mcp-server
 cd my-mcp-server
-
-# Install dependencies
 npm install
+npm run build
 
-# Build the server
+# Or install globally
+npm install -g mcp-framework
+mcp create my-mcp-server
+cd my-mcp-server
+npm install
 npm run build
 
 # Your server is ready to use!
 # Note: When running the server directly, you must provide the base path:
 # node dist/index.js .
+
+# For development, you can also use npx to run your server:
+# npx my-mcp-server
 ```
 
 ### Manual Installation
@@ -56,6 +57,8 @@ The framework provides a powerful CLI for managing your MCP server projects:
 # Create a new project
 mcp create <your project name here>
 ```
+
+Project names can include lowercase letters, numbers, and hyphens (e.g., "my-mcp-server", "data-processor"). The framework will automatically convert hyphenated names to PascalCase for class names (e.g., "my-mcp-server" becomes "MyMcpServer") to ensure valid TypeScript/JavaScript identifiers.
 
 ### Adding a Tool
 
@@ -79,6 +82,32 @@ mcp add resource market-data
 ```
 
 ## Development Workflow
+
+### Local Framework Development
+
+If you're developing the framework itself:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd mcp-framework
+
+# Install dependencies
+npm install
+
+# Build the framework
+npm run build
+
+# Link for local development
+npm link
+
+# Now you can use the local version globally
+mcp create test-project
+```
+
+The `npm link` command creates a symbolic link from your global npm folder to the local framework, allowing you to test changes immediately without publishing to npm.
+
+### Project Development
 
 1. Create your project:
 
@@ -107,6 +136,14 @@ mcp add resource market-data
 
 4. Add to MCP Client (Read below for Claude Desktop example)
 
+### Future Package Management
+
+While currently using npm, we plan to explore additional package management solutions:
+- Poetry for Python integration
+- Better monorepo support
+- Improved dependency management
+- Enhanced local development workflow
+
 Note: When running the server directly with node, you must always provide the base path as an argument. The base path tells the server where to look for tools, prompts, and resources. Using '.' means "current directory".
 
 ## Using with MCP Clients
@@ -122,11 +159,25 @@ Add this configuration to your Roo Cline settings file:
 ```json
 {
   "mcpServers": {
-    "${projectName}": {
+    "test-obsidian": {
+      "command": "npx",
+      "args": ["-y", "test-obsidian"],
+      "disabled": false,
+      "alwaysAllow": []
+    }
+  }
+}
+```
+
+For local development, you can also use:
+```json
+{
+  "mcpServers": {
+    "test-obsidian": {
       "command": "node",
       "args": [
-        "/absolute/path/to/${projectName}/dist/index.js",
-        "/absolute/path/to/${projectName}"  // Base path argument
+        "/absolute/path/to/test-obsidian/dist/index.js",
+        "/absolute/path/to/test-obsidian"
       ],
       "disabled": false,
       "alwaysAllow": []
@@ -136,9 +187,9 @@ Add this configuration to your Roo Cline settings file:
 ```
 
 Note:
-- Replace ${projectName} with your actual project name
-- Use absolute paths to your project directory
-- The second argument must point to your project root where src/, dist/, etc. are located
+- For published packages, use npx for easier installation and updates
+- For local development, use node with absolute paths
+- The base path argument is required and should point to your project root
 - Set disabled to false to enable the server
 - alwaysAllow can be left as an empty array for default security settings
 
@@ -149,32 +200,30 @@ Add this configuration to your Claude Desktop config file:
 **MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
 
-#### Local Development
+#### Published Package
 ```json
 {
-"mcpServers": {
-"${projectName}": {
-      "command": "node",
-      "args":[
-        "/absolute/path/to/${projectName}/dist/index.js",
-        "/absolute/path/to/${projectName}"  // Base path argument
-      ]
-}
-}
+  "mcpServers": {
+    "test-obsidian": {
+      "command": "npx",
+      "args": ["-y", "test-obsidian"]
+    }
+  }
 }
 ```
 
-Note: The second argument is the base path, which must point to your project root directory where src/, dist/, etc. are located.
-
-#### After Publishing
+#### Local Development
 ```json
 {
-"mcpServers": {
-"${projectName}": {
-      "command": "npx",
-      "args": ["${projectName}"]
-}
-}
+  "mcpServers": {
+    "test-obsidian": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/test-obsidian/dist/index.js",
+        "/absolute/path/to/test-obsidian"
+      ]
+    }
+  }
 }
 ```
 
@@ -353,14 +402,24 @@ Each feature should be in its own file and export a default class that extends t
 
 ## Type Safety and Schema Validation
 
-The framework uses a combination of TypeScript for compile-time type checking and Zod for runtime schema validation:
+The framework provides comprehensive type safety through TypeScript and runtime validation with Zod:
+
+### Enhanced Type Safety Features
+- Strict type checking with unknown type handling
+- Proper error discrimination and type guards
+- Nullish coalescing for optional values
+- Type-safe dynamic imports
+- Comprehensive error handling
 
 ### Base Model Integration
-- All base models (MCPTool, MCPPrompt, MCPResource) are integrated with Zod
-- Input validation is handled automatically by the base classes
-- Type definitions are inferred from Zod schemas for perfect type safety
+- All base models (MCPTool, MCPPrompt, MCPResource) feature:
+  - Type-safe Zod schema integration
+  - Automatic input validation
+  - Type inference from schemas
+  - Error-handled operations
+  - Safe dynamic loading
 
-### Schema Definition
+### Schema Definition Example
 ```typescript
 schema = {
   parameter: {
@@ -381,11 +440,14 @@ schema = {
 };
 ```
 
-### Benefits
-- Runtime validation ensures data matches expected format
-- TypeScript integration provides IDE support and catch errors early
-- Zod schemas serve as both validation and documentation
-- Automatic error handling with descriptive messages
+### Type Safety Benefits
+- Compile-time type checking with strict mode
+- Runtime validation with detailed error messages
+- Complete IDE support with accurate type inference
+- Safe handling of optional values and nulls
+- Proper error handling with type discrimination
+- Type-safe dynamic component loading
+- Automatic schema validation
 
 ## License
 

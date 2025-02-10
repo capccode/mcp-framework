@@ -2,14 +2,14 @@ import { z } from "zod";
 
 export type PromptArgumentSchema<T> = {
   [K in keyof T]: {
-    type: any;  // Use any to bypass Zod type conflicts
+    type: z.ZodType<T[K]>;
     description: string;
     required?: boolean;
   };
 };
 
-export type PromptArguments<T extends PromptArgumentSchema<any>> = {
-  [K in keyof T]: z.infer<T[K]["type"]>;
+export type PromptArguments<T> = {
+  [K in keyof T]: T[K];
 };
 
 export interface PromptProtocol {
@@ -74,15 +74,38 @@ export abstract class MCPPrompt<TArgs extends Record<string, any> = {}>
     }>
   >;
 
-  async getMessages(args: Record<string, unknown> = {}) {
-    const zodSchema = z.object(
+  private get zodSchema(): z.ZodObject<{ [K in keyof TArgs]: z.ZodType<TArgs[K]> }> {
+    return z.object(
       Object.fromEntries(
-        Object.entries(this.schema).map(([key, schema]) => [key, schema.type])
+        Object.entries(this.schema).map(([key, schema]) => [
+          key,
+          schema.required === false ? schema.type.optional() : schema.type
+        ])
       )
-    );
+    ) as z.ZodObject<{ [K in keyof TArgs]: z.ZodType<TArgs[K]> }>;
+  }
 
-    const validatedArgs = (await zodSchema.parse(args)) as TArgs;
-    return this.generateMessages(validatedArgs);
+  async getMessages(args: Record<string, unknown> = {}): Promise<Array<{
+    role: string;
+    content: {
+      type: string;
+      text: string;
+      resource?: {
+        uri: string;
+        text: string;
+        mimeType: string;
+      };
+    };
+  }>> {
+    try {
+      const validatedArgs = await this.zodSchema.parseAsync(args);
+      return this.generateMessages(validatedArgs as TArgs);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        throw new Error(`Invalid arguments: ${error.errors.map(e => e.message).join(', ')}`);
+      }
+      throw error;
+    }
   }
 
   protected async fetch<T>(url: string, init?: RequestInit): Promise<T> {

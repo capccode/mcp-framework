@@ -10,24 +10,22 @@ export async function addPrompt(name?: string) {
   let promptName: string;
 
   if (!name) {
-    const response = await prompts([
-      {
-        type: "text",
-        name: "name",
-        message: "What is the name of your prompt?",
-        validate: (value: string) =>
-          /^[a-z0-9-]+$/.test(value)
-            ? true
-            : "Prompt name can only contain lowercase letters, numbers, and hyphens",
-      },
-    ]);
+    const response = await prompts({
+      type: "text",
+      name: "promptName",
+      message: "What is the name of your prompt?",
+      validate: (value: string) =>
+        /^[a-z0-9-]+$/.test(value)
+          ? true
+          : "Prompt name can only contain lowercase letters, numbers, and hyphens",
+    });
 
-    if (!response.name) {
+    if (!response.promptName) {
       console.log("Prompt creation cancelled");
       process.exit(1);
     }
 
-    promptName = response.name as string;
+    promptName = response.promptName;
   } else {
     promptName = name;
   }
@@ -62,7 +60,7 @@ class ${className}Prompt extends MCPPrompt<${className}Input> {
   // Schema is validated by base class
   protected schema: PromptArgumentSchema<${className}Input> = {
     query: {
-      type: z.string(),  // Use z.string() directly
+      type: z.string().min(1),
       description: "Query to process",
       required: true
     }
@@ -97,15 +95,15 @@ class ${className}Prompt extends MCPPrompt<${className}Input> {
           }
         }
       ];
-    } catch (error: any) {
-      logger.error(\`${className}Prompt message generation failed: \${error.message}\`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(\`${className}Prompt message generation failed: \${errorMessage}\`);
       throw new McpError(
         ErrorCode.InternalError,
-        \`Prompt failed: \${error.message}\`
+        \`Prompt failed: \${errorMessage}\`
       );
     }
   }
-
 }
 
 export default ${className}Prompt;`;
@@ -130,8 +128,9 @@ The prompt extends MCPPrompt which provides:
 - Protocol compliance
 - Error handling
     `);
-  } catch (error) {
-    console.error("Error creating prompt:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error creating prompt:", errorMessage);
     process.exit(1);
   }
 }

@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.2.0] - 2025-02-09
+
+### Overview
+This release focuses on comprehensive type safety improvements across the entire framework, enhancing error handling, and improving validation.
+
+### Added
+- Added comprehensive type safety features:
+  - Proper unknown type handling
+  - Type-safe error discrimination
+  - Nullish coalescing for optional values
+  - Type-safe dynamic imports
+  - Strict type guards
+- Added enhanced error handling:
+  - Proper error type discrimination
+  - Type-safe error messages
+  - Improved stack traces
+  - Error context preservation
+- Added type-safe component loading:
+  - Type-safe dynamic imports
+  - Strict validation for loaded components
+  - Error-handled loading process
+- Added type safety testing utilities:
+  - Type guard testing helpers
+  - Error handling test framework
+  - Type safety assertion utilities
+
+### Changed
+- Updated base classes with strict type safety:
+  - Enhanced MCPTool type validation
+  - Improved MCPPrompt type checking
+  - Strengthened MCPResource type safety
+- Improved error handling across components:
+  - Added unknown type handling
+  - Enhanced error discrimination
+  - Added type-safe error messages
+- Enhanced component loaders:
+  - Added type-safe dynamic loading
+  - Improved validation checks
+  - Better error handling
+- Updated documentation with type safety focus:
+  - Added type safety examples
+  - Enhanced error handling guides
+  - Improved validation documentation
+
+### Fixed
+- Fixed type safety issues in base models
+- Fixed error handling in component loaders
+- Fixed type inference in dynamic imports
+- Fixed validation type safety
+- Fixed error message type safety
+- Fixed optional parameter handling
+- Fixed dynamic loading type safety
+- Fixed project template class name generation:
+  - Properly converts hyphenated project names to PascalCase
+  - Ensures valid JavaScript/TypeScript class names
+  - Maintains consistent naming throughout generated code
+
+### Migration Guide
+See the Type Safety Migration Guide in the documentation for detailed instructions on updating your components to use the new type safety features.
+
 ## [0.1.0] - 2025-01-02
 
 ### Overview

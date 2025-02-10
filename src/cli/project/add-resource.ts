@@ -10,24 +10,22 @@ export async function addResource(name?: string) {
   let resourceName: string;
 
   if (!name) {
-    const response = await prompts([
-      {
-        type: "text",
-        name: "name",
-        message: "What is the name of your resource?",
-        validate: (value: string) =>
-          /^[a-z0-9-]+$/.test(value)
-            ? true
-            : "Resource name can only contain lowercase letters, numbers, and hyphens",
-      },
-    ]);
+    const response = await prompts({
+      type: "text",
+      name: "resourceName",
+      message: "What is the name of your resource?",
+      validate: (value: string) =>
+        /^[a-z0-9-]+$/.test(value)
+          ? true
+          : "Resource name can only contain lowercase letters, numbers, and hyphens",
+    });
 
-    if (!response.name) {
+    if (!response.resourceName) {
       console.log("Resource creation cancelled");
       process.exit(1);
     }
 
-    resourceName = response.name as string;
+    resourceName = response.resourceName;
   } else {
     resourceName = name;
   }
@@ -49,6 +47,13 @@ import path from 'path';
 import { logger } from "../../utils/logger.js";
 import { MCPResource } from "mcp-framework";
 
+interface ResourceContent {
+  uri: string;
+  mimeType: string;
+  text?: string;
+  blob?: string;
+}
+
 // Extend MCPResource for type safety and protocol compliance
 class ${className}Resource extends MCPResource {
   name = "${resourceName}";
@@ -60,25 +65,24 @@ class ${className}Resource extends MCPResource {
     super();
     logger.debug(\`Initializing ${className}Resource with base path: \${basePath}\`);
     this.resourceDir = path.join(basePath, 'resources');
-    this.initializeResourceDir();
+    this.initializeResourceDir().catch((error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(\`Failed to initialize resource directory: \${errorMessage}\`);
+    });
   }
 
-  private async initializeResourceDir() {
-    try {
-      await fs.mkdir(this.resourceDir, { recursive: true });
-      const files = await fs.readdir(this.resourceDir);
-      if (files.length === 0) {
-        const sampleContent = "This is a sample resource file.\\nYou can add more files to the resources directory.";
-        await fs.writeFile(path.join(this.resourceDir, 'sample.txt'), sampleContent);
-      }
-    } catch (error) {
-      logger.error(\`Failed to initialize resource directory: \${error}\`);
+  private async initializeResourceDir(): Promise<void> {
+    await fs.mkdir(this.resourceDir, { recursive: true });
+    const files = await fs.readdir(this.resourceDir);
+    if (files.length === 0) {
+      const sampleContent = "This is a sample resource file.\\nYou can add more files to the resources directory.";
+      await fs.writeFile(path.join(this.resourceDir, 'sample.txt'), sampleContent);
     }
   }
 
   private getMimeType(filename: string): string {
     const ext = path.extname(filename).toLowerCase();
-    const mimeTypes: { [key: string]: string } = {
+    const mimeTypes: Record<string, string> = {
       '.txt': 'text/plain',
       '.json': 'application/json',
       '.md': 'text/markdown',
@@ -95,7 +99,7 @@ class ${className}Resource extends MCPResource {
   }
 
   private isTextFile(mimeType: string): boolean {
-    return mimeType.startsWith('text/') || 
+    return mimeType.startsWith('text/') ||
            mimeType === 'application/json' ||
            mimeType === 'application/javascript' ||
            mimeType === 'application/typescript';
@@ -111,20 +115,21 @@ class ${className}Resource extends MCPResource {
         description: \`${className} resource file: \${file}\`,
         mimeType: this.getMimeType(file)
       }));
-    } catch (error: any) {
-      logger.error(\`Failed to list resources: \${error.message}\`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(\`Failed to list resources: \${errorMessage}\`);
       throw new McpError(
         ErrorCode.InternalError,
-        \`Failed to list resources: \${error.message}\`
+        \`Failed to list resources: \${errorMessage}\`
       );
     }
   }
 
-  async read() {
+  async read(): Promise<ResourceContent[]> {
     try {
       logger.debug('Reading ${className} resources');
       const files = await fs.readdir(this.resourceDir);
-      const contents = [];
+      const contents: ResourceContent[] = [];
 
       for (const file of files) {
         const filePath = path.join(this.resourceDir, file);
@@ -150,11 +155,12 @@ class ${className}Resource extends MCPResource {
       }
 
       return contents;
-    } catch (error: any) {
-      logger.error(\`Failed to read resources: \${error.message}\`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(\`Failed to read resources: \${errorMessage}\`);
       throw new McpError(
         ErrorCode.InternalError,
-        \`Failed to read resources: \${error.message}\`
+        \`Failed to read resources: \${errorMessage}\`
       );
     }
   }
@@ -182,8 +188,9 @@ The resource extends MCPResource which provides:
 - Automatic content type detection
 - Error handling
     `);
-  } catch (error) {
-    console.error("Error creating resource:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error creating resource:", errorMessage);
     process.exit(1);
   }
 }

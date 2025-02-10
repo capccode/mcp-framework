@@ -1,15 +1,11 @@
 import { z } from "zod";
 import { Tool as SDKTool } from "@modelcontextprotocol/sdk/types.js";
 
-export type ToolInputSchema<T> = {
+export type SchemaDefinition<T> = {
   [K in keyof T]: {
-    type: any;  // Use any to bypass Zod type checking
+    type: z.ZodType<T[K]>;
     description: string;
   };
-};
-
-export type ToolInput<T extends ToolInputSchema<any>> = {
-  [K in keyof T]: z.infer<T[K]["type"]>;
 };
 
 export interface ToolProtocol extends SDKTool {
@@ -30,13 +26,21 @@ export interface ToolProtocol extends SDKTool {
   }>;
 }
 
-export abstract class MCPTool<TInput extends Record<string, any> = {}>
+export abstract class MCPTool<TInput extends Record<string, unknown> = Record<string, never>>
   implements ToolProtocol
 {
   abstract name: string;
   abstract description: string;
-  protected abstract schema: ToolInputSchema<TInput>;
+  protected abstract schema: SchemaDefinition<TInput>;
   [key: string]: unknown;
+
+  private get zodSchema(): z.ZodObject<{ [K in keyof TInput]: z.ZodType<TInput[K]> }> {
+    return z.object(
+      Object.fromEntries(
+        Object.entries(this.schema).map(([key, schema]) => [key, schema.type])
+      )
+    ) as z.ZodObject<{ [K in keyof TInput]: z.ZodType<TInput[K]> }>;
+  }
 
   get inputSchema(): { type: "object"; properties?: Record<string, unknown> } {
     return {
@@ -65,33 +69,42 @@ export abstract class MCPTool<TInput extends Record<string, any> = {}>
 
   async toolCall(request: {
     params: { name: string; arguments?: Record<string, unknown> };
-  }) {
+  }): Promise<{ content: Array<{ type: string; text: string }> }> {
     try {
-      const args = request.params.arguments || {};
+      const args = request.params.arguments ?? {};
       const validatedInput = await this.validateInput(args);
       const result = await this.execute(validatedInput);
       return this.createSuccessResponse(result);
-    } catch (error) {
-      return this.createErrorResponse(error as Error);
+    } catch (error: unknown) {
+      if (error instanceof z.ZodError) {
+        return this.createErrorResponse(new Error(`Invalid input: ${error.errors.map(e => e.message).join(', ')}`));
+      }
+      return this.createErrorResponse(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
   private async validateInput(args: Record<string, unknown>): Promise<TInput> {
-    const zodSchema = z.object(
-      Object.fromEntries(
-        Object.entries(this.schema).map(([key, schema]) => [key, schema.type])
-      )
-    );
-
-    return zodSchema.parse(args) as TInput;
+    try {
+      const result = await this.zodSchema.parseAsync(args);
+      return result as TInput;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation failed: ${error.errors.map(e => e.message).join(', ')}`);
+      }
+      throw error;
+    }
   }
 
-  private getJsonSchemaType(zodType: z.ZodType<any>): string {
+  private getJsonSchemaType(zodType: z.ZodType<unknown>): string {
     if (zodType instanceof z.ZodString) return "string";
     if (zodType instanceof z.ZodNumber) return "number";
     if (zodType instanceof z.ZodBoolean) return "boolean";
     if (zodType instanceof z.ZodArray) return "array";
     if (zodType instanceof z.ZodObject) return "object";
+    if (zodType instanceof z.ZodEnum) return "string";
+    if (zodType instanceof z.ZodUnion) return "string";
+    if (zodType instanceof z.ZodNullable) return this.getJsonSchemaType(zodType.unwrap());
+    if (zodType instanceof z.ZodOptional) return this.getJsonSchemaType(zodType.unwrap());
     return "string";
   }
 

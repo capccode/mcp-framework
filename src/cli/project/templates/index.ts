@@ -1,0 +1,1 @@
+export { generateIndexTs as mainTemplate } from './config.js';

@@ -37,13 +37,15 @@ export function buildFramework() {
   if (tsc.error) {
     console.error("TypeScript compilation error:", tsc.error);
   }
-  if (tsc.stderr) {
-    console.error("TypeScript stderr:", tsc.stderr.toString());
+  const stderrOutput = tsc.stderr?.toString();
+  if (stderrOutput) {
+    console.error("TypeScript stderr:", stderrOutput);
   }
 
-  if (tsc.status !== 0) {
+  const exitCode = tsc.status ?? 1;
+  if (exitCode !== 0) {
     console.error("TypeScript compilation failed");
-    process.exit(tsc.status ?? 1);
+    process.exit(exitCode);
   }
 
   try {
@@ -68,14 +70,15 @@ export function buildFramework() {
     if (!content.startsWith(shebang)) {
       writeFileSync(indexPath, shebang + content);
     }
-  } catch (error) {
-    console.error("Error in shebang process:", error);
+  } catch (error: unknown) {
+    console.error("Error in shebang process:", error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 
   console.log("Build complete!");
 }
 
-if (import.meta.url === new URL(import.meta.url).href) {
+// Check if this module is being run directly
+if (process.argv[1] === import.meta.url.substring(7)) {
   buildFramework();
 }

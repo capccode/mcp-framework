@@ -1,22 +1,36 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 
-export async function validateMCPProject() {
+interface PackageJson {
+  dependencies?: {
+    "@modelcontextprotocol/sdk"?: string;
+  };
+}
+
+export async function validateMCPProject(): Promise<void> {
   try {
     const packageJsonPath = join(process.cwd(), "package.json");
     const packageJsonContent = await readFile(packageJsonPath, 'utf-8');
-    const package_json = JSON.parse(packageJsonContent);
+    
+    let packageJson: PackageJson;
+    try {
+      packageJson = JSON.parse(packageJsonContent) as PackageJson;
+    } catch (parseError) {
+      throw new Error("Invalid package.json: Failed to parse JSON");
+    }
 
-    if (!package_json.dependencies?.["@modelcontextprotocol/sdk"]) {
+    if (!packageJson.dependencies?.["@modelcontextprotocol/sdk"]) {
       throw new Error(
         "This directory is not an MCP project (@modelcontextprotocol/sdk not found in dependencies)"
       );
     }
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      console.error("Error: Invalid package.json");
-    } else if (error instanceof Error) {
-      console.error(`Error: ${error.message}`);
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      if (error.message.includes("ENOENT")) {
+        console.error("Error: package.json not found in current directory");
+      } else {
+        console.error(`Error: ${error.message}`);
+      }
     } else {
       console.error("Error: Must be run from an MCP project directory");
     }

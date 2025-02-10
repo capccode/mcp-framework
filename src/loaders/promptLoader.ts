@@ -5,10 +5,10 @@ import { logger } from "../core/Logger.js";
 
 export class PromptLoader {
   private readonly PROMPTS_DIR: string;
-  private readonly EXCLUDED_FILES = ["BasePrompt.js", "*.test.js", "*.spec.js"];
+  private readonly EXCLUDED_FILES: ReadonlyArray<string> = ["BasePrompt.js", "*.test.js", "*.spec.js"];
 
   constructor(basePath?: string) {
-    const mainModulePath = basePath || process.argv[1];
+    const mainModulePath = basePath ?? process.argv[1] ?? process.cwd();
     this.PROMPTS_DIR = join(dirname(mainModulePath), "prompts");
     logger.debug(
       `Initialized PromptLoader with directory: ${this.PROMPTS_DIR}`
@@ -27,8 +27,12 @@ export class PromptLoader {
       const hasValidFiles = files.some((file) => this.isPromptFile(file));
       logger.debug(`Prompts directory has valid files: ${hasValidFiles}`);
       return hasValidFiles;
-    } catch (error) {
-      logger.debug("No prompts directory found");
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        logger.debug("No prompts directory found");
+      } else {
+        logger.warn(`Error checking prompts: ${error instanceof Error ? error.message : String(error)}`);
+      }
       return false;
     }
   }
@@ -49,18 +53,25 @@ export class PromptLoader {
     return !isExcluded;
   }
 
-  private validatePrompt(prompt: any): prompt is PromptProtocol {
-    const isValid = Boolean(
-      prompt &&
-        typeof prompt.name === "string" &&
-        prompt.promptDefinition &&
-        typeof prompt.getMessages === "function"
-    );
+  private validatePrompt(prompt: unknown): prompt is PromptProtocol {
+    if (!prompt || typeof prompt !== 'object') {
+      logger.warn('Invalid prompt: not an object');
+      return false;
+    }
+
+    const hasName = 'name' in prompt && typeof (prompt as { name: unknown }).name === 'string';
+    const hasDefinition = 'promptDefinition' in prompt &&
+      typeof (prompt as { promptDefinition: unknown }).promptDefinition === 'object' &&
+      (prompt as { promptDefinition: unknown }).promptDefinition !== null;
+    const hasGetMessages = 'getMessages' in prompt &&
+      typeof (prompt as { getMessages: unknown }).getMessages === 'function';
+
+    const isValid = hasName && hasDefinition && hasGetMessages;
 
     if (isValid) {
-      logger.debug(`Validated prompt: ${prompt.name}`);
+      logger.debug(`Validated prompt: ${(prompt as PromptProtocol).name}`);
     } else {
-      logger.warn(`Invalid prompt found: missing required properties`);
+      logger.warn(`Invalid prompt: missing required properties - name: ${hasName}, definition: ${hasDefinition}, getMessages: ${hasGetMessages}`);
     }
 
     return isValid;
@@ -73,8 +84,12 @@ export class PromptLoader {
       let stats;
       try {
         stats = await fs.stat(this.PROMPTS_DIR);
-      } catch (error) {
-        logger.debug("No prompts directory found");
+      } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+          logger.debug("No prompts directory found");
+        } else {
+          logger.warn(`Error accessing prompts directory: ${error instanceof Error ? error.message : String(error)}`);
+        }
         return [];
       }
 
@@ -98,19 +113,20 @@ export class PromptLoader {
           logger.debug(`Attempting to load prompt from: ${fullPath}`);
 
           const importPath = `file://${fullPath}`;
-          const { default: PromptClass } = await import(importPath);
+          const module = await import(importPath) as { default?: new () => unknown };
 
-          if (!PromptClass) {
-            logger.warn(`No default export found in ${file}`);
+          if (!module.default || typeof module.default !== 'function') {
+            logger.warn(`No valid default export found in ${file}`);
             continue;
           }
 
-          const prompt = new PromptClass();
+          const prompt = new module.default();
           if (this.validatePrompt(prompt)) {
             prompts.push(prompt);
           }
-        } catch (error) {
-          logger.error(`Error loading prompt ${file}: ${error}`);
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error(`Error loading prompt ${file}: ${errorMessage}`);
         }
       }
 
@@ -120,8 +136,9 @@ export class PromptLoader {
           .join(", ")}`
       );
       return prompts;
-    } catch (error) {
-      logger.error(`Failed to load prompts: ${error}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to load prompts: ${errorMessage}`);
       return [];
     }
   }

@@ -5,10 +5,10 @@ import { logger } from "../core/Logger.js";
 
 export class ToolLoader {
   private readonly TOOLS_DIR: string;
-  private readonly EXCLUDED_FILES = ["BaseTool.js", "*.test.js", "*.spec.js"];
+  private readonly EXCLUDED_FILES: ReadonlyArray<string> = ["BaseTool.js", "*.test.js", "*.spec.js"];
 
   constructor(basePath?: string) {
-    const mainModulePath = basePath || process.argv[1];
+    const mainModulePath = basePath ?? process.argv[1] ?? process.cwd();
     this.TOOLS_DIR = join(dirname(mainModulePath), "tools");
     logger.debug(`Initialized ToolLoader with directory: ${this.TOOLS_DIR}`);
   }
@@ -25,8 +25,12 @@ export class ToolLoader {
       const hasValidFiles = files.some((file) => this.isToolFile(file));
       logger.debug(`Tools directory has valid files: ${hasValidFiles}`);
       return hasValidFiles;
-    } catch (error) {
-      logger.debug("No tools directory found");
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        logger.debug("No tools directory found");
+      } else {
+        logger.warn(`Error checking tools: ${error instanceof Error ? error.message : String(error)}`);
+      }
       return false;
     }
   }
@@ -47,18 +51,24 @@ export class ToolLoader {
     return !isExcluded;
   }
 
-  private validateTool(tool: any): tool is ToolProtocol {
-    const isValid = Boolean(
-      tool &&
-        typeof tool.name === "string" &&
-        tool.toolDefinition &&
-        typeof tool.toolCall === "function"
-    );
+  private validateTool(tool: unknown): tool is ToolProtocol {
+    if (!tool || typeof tool !== 'object') {
+      logger.warn('Invalid tool: not an object');
+      return false;
+    }
+
+    const hasName = 'name' in tool && typeof (tool as { name: unknown }).name === 'string';
+    const hasDefinition = 'toolDefinition' in tool &&
+      typeof (tool as { toolDefinition: unknown }).toolDefinition === 'object' &&
+      (tool as { toolDefinition: unknown }).toolDefinition !== null;
+    const hasToolCall = 'toolCall' in tool && typeof (tool as { toolCall: unknown }).toolCall === 'function';
+
+    const isValid = hasName && hasDefinition && hasToolCall;
 
     if (isValid) {
-      logger.debug(`Validated tool: ${tool.name}`);
+      logger.debug(`Validated tool: ${(tool as ToolProtocol).name}`);
     } else {
-      logger.warn(`Invalid tool found: missing required properties`);
+      logger.warn(`Invalid tool: missing required properties - name: ${hasName}, definition: ${hasDefinition}, toolCall: ${hasToolCall}`);
     }
 
     return isValid;
@@ -71,8 +81,12 @@ export class ToolLoader {
       let stats;
       try {
         stats = await fs.stat(this.TOOLS_DIR);
-      } catch (error) {
-        logger.debug("No tools directory found");
+      } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+          logger.debug("No tools directory found");
+        } else {
+          logger.warn(`Error accessing tools directory: ${error instanceof Error ? error.message : String(error)}`);
+        }
         return [];
       }
 
@@ -96,19 +110,20 @@ export class ToolLoader {
           logger.debug(`Attempting to load tool from: ${fullPath}`);
 
           const importPath = `file://${fullPath}`;
-          const { default: ToolClass } = await import(importPath);
+          const module = await import(importPath) as { default?: new () => unknown };
 
-          if (!ToolClass) {
-            logger.warn(`No default export found in ${file}`);
+          if (!module.default || typeof module.default !== 'function') {
+            logger.warn(`No valid default export found in ${file}`);
             continue;
           }
 
-          const tool = new ToolClass();
+          const tool = new module.default();
           if (this.validateTool(tool)) {
             tools.push(tool);
           }
-        } catch (error) {
-          logger.error(`Error loading tool ${file}: ${error}`);
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error(`Error loading tool ${file}: ${errorMessage}`);
         }
       }
 
@@ -118,8 +133,9 @@ export class ToolLoader {
           .join(", ")}`
       );
       return tools;
-    } catch (error) {
-      logger.error(`Failed to load tools: ${error}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to load tools: ${errorMessage}`);
       return [];
     }
   }

@@ -15,15 +15,12 @@ export function generatePackageJson(projectName: string): string {
     },
     dependencies: {
       "@modelcontextprotocol/sdk": "^0.6.1",
-      "mcp-framework": "file:../"
-    },
-    peerDependencies: {
+      "mcp-framework": "^0.1.0",
       "zod": "^3.22.4"
     },
     devDependencies: {
       "@types/node": "^20.11.24",
-      "typescript": "^5.3.3",
-      "zod": "^3.22.4"
+      "typescript": "^5.3.3"
     }
   };
 
@@ -87,7 +84,7 @@ function expandHome(filepath: string): string {
   return filepath;
 }
 
-class ${projectName}Server {
+class ${projectName.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('')}Server {
   private server: Server;
   private tools: Map<string, MCPTool> = new Map();
   private prompts: Map<string, MCPPrompt> = new Map();
@@ -320,16 +317,18 @@ class ${projectName}Server {
   }
 }
 
-// Start server
-const basePath = process.argv[2];
-if (!basePath) {
-  logger.error("Please provide the base path as an argument");
-  process.exit(1);
-}
+// Start server if this is the main module
+if (import.meta.url === new URL(import.meta.url).href) {
+  const basePath = process.argv[2];
+  if (!basePath) {
+    logger.error("Please provide the base path as an argument");
+    process.exit(1);
+  }
 
-const server = new ${projectName}Server(basePath);
-server.start().catch(error => {
-  logger.error(\`Failed to start server: \${error}\`);
-  process.exit(1);
-});`;
+  const server = new ${projectName.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('')}Server(basePath);
+  server.start().catch(error => {
+    logger.error(\`Failed to start server: \${error}\`);
+    process.exit(1);
+  });
+}`;
 }

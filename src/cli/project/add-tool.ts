@@ -10,24 +10,22 @@ export async function addTool(name?: string) {
   let toolName: string;
 
   if (!name) {
-    const response = await prompts([
-      {
-        type: "text",
-        name: "name",
-        message: "What is the name of your tool?",
-        validate: (value: string) =>
-          /^[a-z0-9-]+$/.test(value)
-            ? true
-            : "Tool name can only contain lowercase letters, numbers, and hyphens",
-      },
-    ]);
+    const response = await prompts({
+      type: "text",
+      name: "toolName",
+      message: "What is the name of your tool?",
+      validate: (value: string) =>
+        /^[a-z0-9-]+$/.test(value)
+          ? true
+          : "Tool name can only contain lowercase letters, numbers, and hyphens",
+    });
 
-    if (!response.name) {
+    if (!response.toolName) {
       console.log("Tool creation cancelled");
       process.exit(1);
     }
 
-    toolName = response.name as string;
+    toolName = response.toolName;
   } else {
     toolName = name;
   }
@@ -48,10 +46,18 @@ import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { logger } from "../../utils/logger.js";
 import { MCPTool, ToolInputSchema } from "mcp-framework";
 
-// Define input type
+// Define input type with strict typing
 interface ${className}Input {
   // Define your tool's input parameters here
   param: string;
+}
+
+// Define response type for better type safety
+interface ${className}Response {
+  content: Array<{
+    type: string;
+    text: string;
+  }>;
 }
 
 // Extend MCPTool with input type for type safety
@@ -62,7 +68,7 @@ class ${className}Tool extends MCPTool<${className}Input> {
   // Schema is validated by base class
   protected schema: ToolInputSchema<${className}Input> = {
     param: {
-      type: z.string(),  // Use z.string() directly
+      type: z.string().min(1, "Parameter must not be empty"),
       description: "Parameter description",
     }
   };
@@ -72,29 +78,39 @@ class ${className}Tool extends MCPTool<${className}Input> {
     logger.debug(\`Initializing ${className}Tool with base path: \${basePath}\`);
   }
 
-  // Implementation with type-safe input
-  public async execute(input: ${className}Input) {
+  // Implementation with type-safe input and response
+  protected async execute(input: ${className}Input): Promise<${className}Response> {
     const { param } = input;
     
     try {
       logger.debug(\`Executing ${className}Tool with param: \${param}\`);
       
-      // Return in MCP protocol format
+      // Add your tool implementation here
+      // This is just a sample implementation
+      const processedResult = await this.processParam(param);
+      
       return {
         content: [
           {
             type: "text",
-            text: \`${className} processed: \${param}\`
+            text: processedResult
           }
         ]
       };
-    } catch (error: any) {
-      logger.error(\`${className}Tool execution failed: \${error.message}\`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(\`${className}Tool execution failed: \${errorMessage}\`);
       throw new McpError(
         ErrorCode.InternalError,
-        \`Tool execution failed: \${error.message}\`
+        \`Tool execution failed: \${errorMessage}\`
       );
     }
+  }
+
+  // Example helper method - replace with your actual implementation
+  private async processParam(param: string): Promise<string> {
+    // Add your processing logic here
+    return \`${className} processed: \${param}\`;
   }
 }
 
@@ -119,8 +135,9 @@ The tool extends MCPTool which provides:
 - Protocol compliance
 - Error handling
     `);
-  } catch (error) {
-    console.error("Error creating tool:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error creating tool:", errorMessage);
     process.exit(1);
   }
 }

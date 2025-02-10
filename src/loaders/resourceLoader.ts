@@ -5,14 +5,14 @@ import { logger } from "../core/Logger.js";
 
 export class ResourceLoader {
   private readonly RESOURCES_DIR: string;
-  private readonly EXCLUDED_FILES = [
+  private readonly EXCLUDED_FILES: ReadonlyArray<string> = [
     "BaseResource.js",
     "*.test.js",
     "*.spec.js",
   ];
 
   constructor(basePath?: string) {
-    const mainModulePath = basePath || process.argv[1];
+    const mainModulePath = basePath ?? process.argv[1] ?? process.cwd();
     this.RESOURCES_DIR = join(dirname(mainModulePath), "resources");
     logger.debug(
       `Initialized ResourceLoader with directory: ${this.RESOURCES_DIR}`
@@ -31,8 +31,12 @@ export class ResourceLoader {
       const hasValidFiles = files.some((file) => this.isResourceFile(file));
       logger.debug(`Resources directory has valid files: ${hasValidFiles}`);
       return hasValidFiles;
-    } catch (error) {
-      logger.debug("No resources directory found");
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        logger.debug("No resources directory found");
+      } else {
+        logger.warn(`Error checking resources: ${error instanceof Error ? error.message : String(error)}`);
+      }
       return false;
     }
   }
@@ -53,19 +57,25 @@ export class ResourceLoader {
     return !isExcluded;
   }
 
-  private validateResource(resource: any): resource is ResourceProtocol {
-    const isValid = Boolean(
-      resource &&
-        typeof resource.uri === "string" &&
-        typeof resource.name === "string" &&
-        resource.resourceDefinition &&
-        typeof resource.read === "function"
-    );
+  private validateResource(resource: unknown): resource is ResourceProtocol {
+    if (!resource || typeof resource !== 'object') {
+      logger.warn('Invalid resource: not an object');
+      return false;
+    }
+
+    const hasUri = 'uri' in resource && typeof (resource as { uri: unknown }).uri === 'string';
+    const hasName = 'name' in resource && typeof (resource as { name: unknown }).name === 'string';
+    const hasDefinition = 'resourceDefinition' in resource &&
+      typeof (resource as { resourceDefinition: unknown }).resourceDefinition === 'object' &&
+      (resource as { resourceDefinition: unknown }).resourceDefinition !== null;
+    const hasRead = 'read' in resource && typeof (resource as { read: unknown }).read === 'function';
+
+    const isValid = hasUri && hasName && hasDefinition && hasRead;
 
     if (isValid) {
-      logger.debug(`Validated resource: ${resource.name}`);
+      logger.debug(`Validated resource: ${(resource as ResourceProtocol).name}`);
     } else {
-      logger.warn(`Invalid resource found: missing required properties`);
+      logger.warn(`Invalid resource: missing required properties - uri: ${hasUri}, name: ${hasName}, definition: ${hasDefinition}, read: ${hasRead}`);
     }
 
     return isValid;
@@ -78,8 +88,12 @@ export class ResourceLoader {
       let stats;
       try {
         stats = await fs.stat(this.RESOURCES_DIR);
-      } catch (error) {
-        logger.debug("No resources directory found");
+      } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+          logger.debug("No resources directory found");
+        } else {
+          logger.warn(`Error accessing resources directory: ${error instanceof Error ? error.message : String(error)}`);
+        }
         return [];
       }
 
@@ -103,19 +117,20 @@ export class ResourceLoader {
           logger.debug(`Attempting to load resource from: ${fullPath}`);
 
           const importPath = `file://${fullPath}`;
-          const { default: ResourceClass } = await import(importPath);
+          const module = await import(importPath) as { default?: new () => unknown };
 
-          if (!ResourceClass) {
-            logger.warn(`No default export found in ${file}`);
+          if (!module.default || typeof module.default !== 'function') {
+            logger.warn(`No valid default export found in ${file}`);
             continue;
           }
 
-          const resource = new ResourceClass();
+          const resource = new module.default();
           if (this.validateResource(resource)) {
             resources.push(resource);
           }
-        } catch (error) {
-          logger.error(`Error loading resource ${file}: ${error}`);
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error(`Error loading resource ${file}: ${errorMessage}`);
         }
       }
 
@@ -125,8 +140,9 @@ export class ResourceLoader {
           .join(", ")}`
       );
       return resources;
-    } catch (error) {
-      logger.error(`Failed to load resources: ${error}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to load resources: ${errorMessage}`);
       return [];
     }
   }
