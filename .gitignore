@@ -3,5 +3,3 @@ node_modules/
 logs/
 *.log
 obsidian-mcp/
-cursor_docs/
-TODO.md
