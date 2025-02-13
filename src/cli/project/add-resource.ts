@@ -45,20 +45,14 @@ export async function addResource(name?: string) {
 import { promises as fs } from 'fs';
 import path from 'path';
 import { logger } from "../../utils/logger.js";
-import { MCPResource } from "mcp-framework";
+import { MCPResource, ResourceContent } from "mcp-framework";
 
-interface ResourceContent {
-  uri: string;
-  mimeType: string;
-  text?: string;
-  blob?: string;
-}
-
-// Extend MCPResource for type safety and protocol compliance
-class ${className}Resource extends MCPResource {
+// Create resource class that extends MCPResource
+export default class ${className}Resource extends MCPResource {
   name = "${resourceName}";
   description = "${className} resource description";
   uri = "${resourceName}://";  // Base URI for this resource
+  mimeType = "text/plain";     // Default MIME type
   private resourceDir: string;
 
   constructor(private basePath: string) {
@@ -66,17 +60,27 @@ class ${className}Resource extends MCPResource {
     logger.debug(\`Initializing ${className}Resource with base path: \${basePath}\`);
     this.resourceDir = path.join(basePath, 'resources');
     this.initializeResourceDir().catch((error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(\`Failed to initialize resource directory: \${errorMessage}\`);
+      logger.error(\`Failed to initialize resource directory: \${
+        error instanceof Error ? error.message : String(error)
+      }\`);
     });
   }
 
   private async initializeResourceDir(): Promise<void> {
-    await fs.mkdir(this.resourceDir, { recursive: true });
-    const files = await fs.readdir(this.resourceDir);
-    if (files.length === 0) {
-      const sampleContent = "This is a sample resource file.\\nYou can add more files to the resources directory.";
-      await fs.writeFile(path.join(this.resourceDir, 'sample.txt'), sampleContent);
+    try {
+      await fs.mkdir(this.resourceDir, { recursive: true });
+      const files = await fs.readdir(this.resourceDir);
+      if (files.length === 0) {
+        const sampleContent = "This is a sample resource file.\\nYou can add more files to the resources directory.";
+        await fs.writeFile(path.join(this.resourceDir, 'sample.txt'), sampleContent);
+      }
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        \`Failed to initialize resource directory: \${
+          error instanceof Error ? error.message : String(error)
+        }\`
+      );
     }
   }
 
@@ -105,26 +109,6 @@ class ${className}Resource extends MCPResource {
            mimeType === 'application/typescript';
   }
 
-  async list() {
-    try {
-      logger.debug('Listing ${className} resources');
-      const files = await fs.readdir(this.resourceDir);
-      return files.map(file => ({
-        uri: \`\${this.uri}\${file}\`,
-        name: file,
-        description: \`${className} resource file: \${file}\`,
-        mimeType: this.getMimeType(file)
-      }));
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(\`Failed to list resources: \${errorMessage}\`);
-      throw new McpError(
-        ErrorCode.InternalError,
-        \`Failed to list resources: \${errorMessage}\`
-      );
-    }
-  }
-
   async read(): Promise<ResourceContent[]> {
     try {
       logger.debug('Reading ${className} resources');
@@ -137,36 +121,61 @@ class ${className}Resource extends MCPResource {
         const isText = this.isTextFile(mimeType);
         const uri = \`\${this.uri}\${file}\`;
 
-        if (isText) {
-          const content = await fs.readFile(filePath, 'utf-8');
-          contents.push({
-            uri,
-            mimeType,
-            text: content
-          });
-        } else {
-          const content = await fs.readFile(filePath);
-          contents.push({
-            uri,
-            mimeType,
-            blob: content.toString('base64')
-          });
+        try {
+          if (isText) {
+            const content = await fs.readFile(filePath, 'utf-8');
+            contents.push(this.createSuccessResponse({
+              uri,
+              mimeType,
+              text: content
+            }));
+          } else {
+            const content = await fs.readFile(filePath);
+            contents.push(this.createSuccessResponse({
+              uri,
+              mimeType,
+              blob: content.toString('base64')
+            }));
+          }
+        } catch (error) {
+          logger.warn(\`Failed to read file \${file}: \${
+            error instanceof Error ? error.message : String(error)
+          }\`);
+          // Continue with other files even if one fails
+          continue;
         }
       }
 
+      if (contents.length === 0) {
+        throw new McpError(
+          ErrorCode.NotFound,
+          'No readable resources found'
+        );
+      }
+
       return contents;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(\`Failed to read resources: \${errorMessage}\`);
+    } catch (error) {
+      if (error instanceof McpError) {
+        throw error;
+      }
       throw new McpError(
         ErrorCode.InternalError,
-        \`Failed to read resources: \${errorMessage}\`
+        \`Failed to read resources: \${
+          error instanceof Error ? error.message : String(error)
+        }\`
       );
     }
   }
-}
 
-export default ${className}Resource;`;
+  protected createSuccessResponse(content: ResourceContent): ResourceContent {
+    return {
+      uri: content.uri,
+      mimeType: content.mimeType || this.mimeType,
+      text: content.text,
+      blob: content.blob
+    };
+  }
+}`;
 
     await writeFile(join(resourceDir, "index.ts"), resourceContent);
 
@@ -182,11 +191,11 @@ You can now:
 3. Update the URI pattern and description
 4. Add any resource-specific functionality
 
-The resource extends MCPResource which provides:
-- Type-safe content handling
-- Protocol compliance
-- Automatic content type detection
-- Error handling
+The resource provides:
+- Standardized content handling
+- Proper error handling with McpError
+- Automatic MIME type detection
+- Helper methods for responses
     `);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);

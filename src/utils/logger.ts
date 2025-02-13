@@ -1,5 +1,5 @@
 import { createWriteStream, WriteStream } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { mkdir } from "fs/promises";
 
 export class Logger {
@@ -7,11 +7,12 @@ export class Logger {
   private logStream: WriteStream | null = null;
   private logFilePath: string;
   private logDir: string;
-  private static basePath: string;
 
   private constructor() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    this.logDir = join(Logger.basePath || process.cwd(), "logs");
+    // Use dirname(process.argv[1]) to get the directory containing the running script
+    const scriptDir = dirname(process.argv[1]);
+    this.logDir = join(scriptDir, "..", "logs");
     this.logFilePath = join(this.logDir, `mcp-server-${timestamp}.log`);
     this.initializeLogDir();
   }
@@ -30,10 +31,6 @@ export class Logger {
       console.error(`Failed to create logs directory: ${err}`);
       // Continue without file logging
     }
-  }
-
-  public static setBasePath(path: string) {
-    Logger.basePath = path;
   }
 
   public static getInstance(): Logger {

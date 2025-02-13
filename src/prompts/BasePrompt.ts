@@ -1,118 +1,31 @@
-import { z } from "zod";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 
-export type PromptArgumentSchema<T> = {
-  [K in keyof T]: {
-    type: z.ZodType<T[K]>;
-    description: string;
-    required?: boolean;
-  };
-};
-
-export type PromptArguments<T> = {
-  [K in keyof T]: T[K];
-};
-
-export interface PromptProtocol {
+export interface Prompt {
   name: string;
   description: string;
-  promptDefinition: {
-    name: string;
-    description: string;
-    arguments?: Array<{
-      name: string;
-      description: string;
-      required?: boolean;
-    }>;
-  };
-  getMessages(args?: Record<string, unknown>): Promise<
-    Array<{
-      role: string;
-      content: {
-        type: string;
-        text: string;
-        resource?: {
-          uri: string;
-          text: string;
-          mimeType: string;
-        };
-      };
-    }>
-  >;
+  inputSchema: any;
+  getMessages: (args: any) => Promise<Array<{
+    role: "user" | "assistant";
+    content: {
+      type: "text";
+      text: string;
+    };
+  }>>;
 }
 
-export abstract class MCPPrompt<TArgs extends Record<string, any> = {}>
-  implements PromptProtocol
-{
-  abstract name: string;
-  abstract description: string;
-  protected abstract schema: PromptArgumentSchema<TArgs>;
-
-  get promptDefinition() {
-    return {
-      name: this.name,
-      description: this.description,
-      arguments: Object.entries(this.schema).map(([name, schema]) => ({
-        name,
-        description: schema.description,
-        required: schema.required ?? false,
-      })),
-    };
-  }
-
-  protected abstract generateMessages(args: TArgs): Promise<
-    Array<{
-      role: string;
-      content: {
-        type: string;
-        text: string;
-        resource?: {
-          uri: string;
-          text: string;
-          mimeType: string;
-        };
-      };
-    }>
-  >;
-
-  private get zodSchema(): z.ZodObject<{ [K in keyof TArgs]: z.ZodType<TArgs[K]> }> {
-    return z.object(
-      Object.fromEntries(
-        Object.entries(this.schema).map(([key, schema]) => [
-          key,
-          schema.required === false ? schema.type.optional() : schema.type
-        ])
-      )
-    ) as z.ZodObject<{ [K in keyof TArgs]: z.ZodType<TArgs[K]> }>;
-  }
-
-  async getMessages(args: Record<string, unknown> = {}): Promise<Array<{
-    role: string;
+export interface PromptResponse {
+  messages: Array<{
+    role: "user" | "assistant";
     content: {
-      type: string;
+      type: "text";
       text: string;
-      resource?: {
-        uri: string;
-        text: string;
-        mimeType: string;
-      };
     };
-  }>> {
-    try {
-      const validatedArgs = await this.zodSchema.parseAsync(args);
-      return this.generateMessages(validatedArgs as TArgs);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        throw new Error(`Invalid arguments: ${error.errors.map(e => e.message).join(', ')}`);
-      }
-      throw error;
-    }
-  }
+  }>;
+}
 
-  protected async fetch<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(url, init);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
+export class MCPError extends McpError {
+  constructor(code: number, message: string) {
+    super(code, message);
+    this.name = "MCPError";
   }
 }

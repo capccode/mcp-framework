@@ -1,4 +1,4 @@
-import { join, dirname } from "path";
+import { join } from "path";
 import { promises as fs } from "fs";
 import { logger } from "./logger.js";
 
@@ -10,17 +10,13 @@ interface BaseComponent {
 export class ComponentLoader<T extends BaseComponent> {
   private readonly EXCLUDED_FILES = ["*.test.js", "*.spec.js"];
   private readonly componentDir: string;
-  private readonly componentType: string;
 
   constructor(
     private basePath: string,
-    componentType: string,
-    private validateComponent: (component: any) => component is T
+    private componentType: string,
+    private validateComponent: (component: unknown) => component is T
   ) {
-    this.componentType = componentType;
-    // Use basePath directly to find components
-    this.componentDir = join(this.basePath, "dist", componentType);
-    
+    this.componentDir = join(basePath, "src", componentType);
     logger.debug(
       `Initialized ${componentType} loader with directory: ${this.componentDir}`
     );
@@ -77,18 +73,14 @@ export class ComponentLoader<T extends BaseComponent> {
         }
 
         try {
-          // Import the index.js file from each component directory
-          const indexPath = join(this.componentDir, dir, 'index.js');
-          logger.debug(`Attempting to load component from: ${indexPath}`);
-
-          // Use relative import path from current directory
-          const relativeImportPath = join('..', this.componentType, dir, 'index.js');
+          // Use relative import path from current directory (dist/utils)
+          const relativeImportPath = `../src/${this.componentType}/${dir}/index.js`;
           logger.debug(`Using import path: ${relativeImportPath}`);
           
           const { default: ComponentClass } = await import(relativeImportPath);
 
           if (!ComponentClass) {
-            logger.warn(`No default export found in ${indexPath}`);
+            logger.warn(`No default export found in ${dir}`);
             continue;
           }
 

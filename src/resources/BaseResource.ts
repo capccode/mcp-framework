@@ -1,65 +1,22 @@
-export type ResourceContent = {
-  uri: string;
-  mimeType?: string;
-  text?: string;
-  blob?: string;
-};
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
 
-export type ResourceDefinition = {
-  uri: string;
+export interface Resource {
   name: string;
-  description?: string;
-  mimeType?: string;
-};
-
-export type ResourceTemplateDefinition = {
-  uriTemplate: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-};
-
-export interface ResourceProtocol {
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-  resourceDefinition: ResourceDefinition;
-  read(): Promise<ResourceContent[]>;
-  subscribe?(): Promise<void>;
-  unsubscribe?(): Promise<void>;
+  description: string;
+  read: () => Promise<Array<ResourceContent>>;
 }
 
-export abstract class MCPResource implements ResourceProtocol {
-  abstract uri: string;
-  abstract name: string;
+export interface ResourceContent {
+  uri: string;
+  name: string;
   description?: string;
   mimeType?: string;
+  text: string;
+}
 
-  get resourceDefinition(): ResourceDefinition {
-    return {
-      uri: this.uri,
-      name: this.name,
-      description: this.description,
-      mimeType: this.mimeType,
-    };
-  }
-
-  abstract read(): Promise<ResourceContent[]>;
-
-  async subscribe?(): Promise<void> {
-    throw new Error("Subscription not implemented for this resource");
-  }
-
-  async unsubscribe?(): Promise<void> {
-    throw new Error("Unsubscription not implemented for this resource");
-  }
-
-  protected async fetch<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(url, init);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
+export class MCPError extends McpError {
+  constructor(code: number, message: string) {
+    super(code, message);
+    this.name = "MCPError";
   }
 }

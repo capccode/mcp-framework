@@ -1,6 +1,6 @@
 export function generateLogger(): string {
   return `import { createWriteStream, WriteStream } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { mkdir } from "fs/promises";
 
 export class Logger {
@@ -11,7 +11,9 @@ export class Logger {
 
   private constructor() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    this.logDir = join(process.cwd(), "logs");
+    // Use dirname(process.argv[1]) to get the directory containing the running script
+    const scriptDir = dirname(process.argv[1]);
+    this.logDir = join(scriptDir, "..", "logs");
     this.logFilePath = join(this.logDir, \`mcp-server-\${timestamp}.log\`);
     this.initializeLogDir();
   }
@@ -44,7 +46,7 @@ export class Logger {
   }
 
   private formatMessage(level: string, message: string): string {
-    return \`[\${this.getTimestamp()}] [\${level}] \${message}\n\`;
+    return \`[\${this.getTimestamp()}] [\${level}] \${message}\\n\`;
   }
 
   private writeToStream(formattedMessage: string) {
@@ -98,7 +100,7 @@ export const logger = Logger.getInstance();`;
 }
 
 export function generateComponentLoader(): string {
-  return `import { join, dirname } from "path";
+  return `import { join } from "path";
 import { promises as fs } from "fs";
 import { logger } from "./logger.js";
 
@@ -110,18 +112,13 @@ interface BaseComponent {
 export class ComponentLoader<T extends BaseComponent> {
   private readonly EXCLUDED_FILES = ["*.test.js", "*.spec.js"];
   private readonly componentDir: string;
-  private readonly componentType: string;
 
   constructor(
     private basePath: string,
-    componentType: string,
+    private componentType: string,
     private validateComponent: (component: any) => component is T
   ) {
-    this.componentType = componentType;
-    // When running from dist/index.js, we need to look in dist/[componentType]
-    const scriptDir = dirname(process.argv[1]); // dist/
-    this.componentDir = join(scriptDir, componentType);
-    
+    this.componentDir = join(basePath, "src", componentType);
     logger.debug(
       \`Initialized \${componentType} loader with directory: \${this.componentDir}\`
     );
@@ -178,10 +175,6 @@ export class ComponentLoader<T extends BaseComponent> {
         }
 
         try {
-          // Import the index.js file from each component directory
-          const indexPath = join(this.componentDir, dir, 'index.js');
-          logger.debug(\`Attempting to load component from: \${indexPath}\`);
-
           // Use relative import path from current directory (dist/utils)
           const relativeImportPath = \`../\${this.componentType}/\${dir}/index.js\`;
           logger.debug(\`Using import path: \${relativeImportPath}\`);
@@ -189,7 +182,7 @@ export class ComponentLoader<T extends BaseComponent> {
           const { default: ComponentClass } = await import(relativeImportPath);
 
           if (!ComponentClass) {
-            logger.warn(\`No default export found in \${indexPath}\`);
+            logger.warn(\`No default export found in \${dir}\`);
             continue;
           }
 

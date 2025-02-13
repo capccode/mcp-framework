@@ -7,18 +7,12 @@ import {
   GetPromptRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
+  McpError,
+  ErrorCode
 } from "@modelcontextprotocol/sdk/types.js";
-import { ToolProtocol } from "../tools/BaseTool.js";
-import { PromptProtocol } from "../prompts/BasePrompt.js";
-import { ResourceProtocol } from "../resources/BaseResource.js";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
-import { logger } from "./Logger.js";
-import { ToolLoader } from "../loaders/toolLoader.js";
-import { PromptLoader } from "../loaders/promptLoader.js";
-import { ResourceLoader } from "../loaders/resourceLoader.js";
+import { logger } from "../utils/logger.js";
 
 interface PackageJson {
   name?: string;
@@ -31,37 +25,49 @@ export interface MCPServerConfig {
   basePath?: string;
 }
 
-export type ServerCapabilities = {
-  tools?: {
-    enabled: true;
+// Define interfaces to match MCP protocol
+interface Tool {
+  name: string;
+  description: string;
+  inputSchema: {
+    parse: (args: any) => any;
+    jsonSchema: any;
   };
-  schemas?: {
-    enabled: true;
-  };
-  prompts?: {
-    enabled: true;
-  };
-  resources?: {
-    enabled: true;
-  };
-};
+  handler: (args: any) => Promise<{
+    content: Array<{
+      type: "text";
+      text: string;
+    }>;
+  }>;
+}
 
-interface ToolRequest {
-  params: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
-  method: 'tools/call';
+interface Prompt {
+  name: string;
+  description: string;
+  inputSchema: any;
+  getMessages: (args: any) => Promise<any>;
+}
+
+interface Resource {
+  name: string;
+  description: string;
+  read: () => Promise<any>;
+}
+
+// Resource content interface
+interface ResourceContent {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  text: string;
 }
 
 export class MCPServer {
   private server: Server;
-  private toolsMap: Map<string, ToolProtocol> = new Map();
-  private promptsMap: Map<string, PromptProtocol> = new Map();
-  private resourcesMap: Map<string, ResourceProtocol> = new Map();
-  private toolLoader: ToolLoader;
-  private promptLoader: PromptLoader;
-  private resourceLoader: ResourceLoader;
+  private tools: Map<string, Tool> = new Map();
+  private prompts: Map<string, Prompt> = new Map();
+  private resources: Map<string, Resource> = new Map();
   private serverName: string;
   private serverVersion: string;
   private basePath: string;
@@ -78,10 +84,6 @@ export class MCPServer {
       `Initializing MCP Server: ${this.serverName}@${this.serverVersion}`
     );
 
-    this.toolLoader = new ToolLoader(this.basePath);
-    this.promptLoader = new PromptLoader(this.basePath);
-    this.resourceLoader = new ResourceLoader(this.basePath);
-
     this.server = new Server(
       {
         name: this.serverName,
@@ -89,10 +91,19 @@ export class MCPServer {
       },
       {
         capabilities: {
-          tools: { enabled: true },
-          prompts: { enabled: false },
-          resources: { enabled: false },
-        },
+          tools: {
+            list: true,
+            call: true
+          },
+          prompts: {
+            list: true,
+            get: true
+          },
+          resources: {
+            list: true,
+            read: true
+          }
+        }
       }
     );
 
@@ -134,147 +145,171 @@ export class MCPServer {
     return configPath ?? process.argv[1] ?? process.cwd();
   }
 
-  private setupHandlers(): void {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: Array.from(this.toolsMap.values()).map((tool) => tool.toolDefinition),
-    }));
-
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const tool = this.toolsMap.get(request.params.name);
-      if (!tool) {
-        throw new Error(
-          `Unknown tool: ${request.params.name}. Available tools: ${Array.from(this.toolsMap.keys()).join(", ")}`
-        );
-      }
-
-      const toolRequest: ToolRequest = {
-        params: {
-          name: request.params.name,
-          arguments: request.params.arguments ?? {}
-        },
-        method: "tools/call",
-      };
-
-      return tool.toolCall(toolRequest);
-    });
-
-    this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-      prompts: Array.from(this.promptsMap.values()).map((prompt) => prompt.promptDefinition),
-    }));
-
-    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-      const prompt = this.promptsMap.get(request.params.name);
-      if (!prompt) {
-        throw new Error(
-          `Unknown prompt: ${request.params.name}. Available prompts: ${Array.from(this.promptsMap.keys()).join(", ")}`
-        );
-      }
-
-      return {
-        messages: await prompt.getMessages(request.params.arguments ?? {}),
-      };
-    });
-
-    this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: Array.from(this.resourcesMap.values()).map((resource) => resource.resourceDefinition),
-    }));
-
-    this.server.setRequestHandler(ReadResourceRequestSchema, async (request: { params: { uri: string } }) => {
-      const resource = this.resourcesMap.get(request.params.uri);
-      if (!resource) {
-        throw new Error(
-          `Unknown resource: ${request.params.uri}. Available resources: ${Array.from(this.resourcesMap.keys()).join(", ")}`
-        );
-      }
-
-      return {
-        contents: await resource.read(),
-      };
-    });
-
-    this.server.setRequestHandler(SubscribeRequestSchema, async (request: { params: { uri: string } }) => {
-      const resource = this.resourcesMap.get(request.params.uri);
-      if (!resource) {
-        throw new Error(`Unknown resource: ${request.params.uri}`);
-      }
-
-      if (!resource.subscribe) {
-        throw new Error(`Resource ${request.params.uri} does not support subscriptions`);
-      }
-
-      await resource.subscribe();
-      return {};
-    });
-
-    this.server.setRequestHandler(UnsubscribeRequestSchema, async (request: { params: { uri: string } }) => {
-      const resource = this.resourcesMap.get(request.params.uri);
-      if (!resource) {
-        throw new Error(`Unknown resource: ${request.params.uri}`);
-      }
-
-      if (!resource.unsubscribe) {
-        throw new Error(`Resource ${request.params.uri} does not support subscriptions`);
-      }
-
-      await resource.unsubscribe();
-      return {};
-    });
+  registerTool(tool: Tool) {
+    logger.debug(`Registering tool: ${tool.name}`);
+    this.tools.set(tool.name, tool);
+    logger.debug(`Current tools: ${Array.from(this.tools.keys()).join(', ')}`);
   }
 
-  private async detectCapabilities(): Promise<ServerCapabilities> {
-    const capabilities: ServerCapabilities = {};
-    
-    const [hasTools, hasPrompts, hasResources] = await Promise.all([
-      this.toolLoader.hasTools(),
-      this.promptLoader.hasPrompts(),
-      this.resourceLoader.hasResources()
-    ]);
+  registerPrompt(prompt: Prompt) {
+    logger.debug(`Registering prompt: ${prompt.name}`);
+    this.prompts.set(prompt.name, prompt);
+    logger.debug(`Current prompts: ${Array.from(this.prompts.keys()).join(', ')}`);
+  }
 
-    if (hasTools) {
-      capabilities.tools = { enabled: true };
-      logger.debug("Tools capability enabled");
-    }
+  registerResource(resource: Resource) {
+    logger.debug(`Registering resource: ${resource.name}`);
+    this.resources.set(resource.name, resource);
+    logger.debug(`Current resources: ${Array.from(this.resources.keys()).join(', ')}`);
+  }
 
-    if (hasPrompts) {
-      capabilities.prompts = { enabled: true };
-      logger.debug("Prompts capability enabled");
-    }
+  private setupHandlers(): void {
+    // List available tools
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: Array.from(this.tools.values()).map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema.jsonSchema
+      }))
+    }));
 
-    if (hasResources) {
-      capabilities.resources = { enabled: true };
-      logger.debug("Resources capability enabled");
-    }
+    // Handle tool calls
+    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
 
-    return capabilities;
+      const tool = this.tools.get(name);
+      if (!tool) {
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+      }
+
+      try {
+        // Validate and transform arguments using tool's schema handler
+        const validatedArgs = tool.inputSchema.parse(args || {});
+        
+        // Execute tool with validated arguments
+        const result = await tool.handler(validatedArgs);
+        
+        return {
+          _meta: {
+            toolName: name,
+            timestamp: new Date().toISOString(),
+            success: true
+          },
+          ...result
+        };
+      } catch (error) {
+        if (error instanceof McpError) {
+          throw error;
+        }
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    });
+
+    // List available prompts
+    this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+      prompts: Array.from(this.prompts.values()).map(prompt => ({
+        name: prompt.name,
+        description: prompt.description,
+        inputSchema: prompt.inputSchema
+      }))
+    }));
+
+    // Handle prompt requests
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+
+      const prompt = this.prompts.get(name);
+      if (!prompt) {
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown prompt: ${name}`);
+      }
+
+      try {
+        return {
+          messages: await prompt.getMessages(args)
+        };
+      } catch (error) {
+        if (error instanceof McpError) {
+          throw error;
+        }
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Prompt execution failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    });
+
+    // List available resources
+    this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+      try {
+        const allResources = [];
+        for (const resource of this.resources.values()) {
+          const contents = await resource.read();
+          allResources.push(...contents);
+        }
+        return { resources: allResources };
+      } catch (error) {
+        if (error instanceof McpError) {
+          throw error;
+        }
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Failed to list resources: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    });
+
+    // Handle resource requests
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const uri = request.params?.uri;
+      if (!uri || typeof uri !== 'string') {
+        throw new McpError(ErrorCode.InvalidParams, "Missing or invalid URI parameter");
+      }
+
+      // Find the resource handler based on URI scheme
+      const scheme = uri.split('://')[0];
+      const resource = this.resources.get(scheme);
+      if (!resource) {
+        throw new McpError(ErrorCode.InvalidParams, `Unsupported resource type: ${scheme}`);
+      }
+
+      try {
+        const contents = await resource.read();
+        const content = contents.find((c: ResourceContent) => c.uri === uri);
+        if (!content) {
+          throw new McpError(ErrorCode.InvalidParams, `Resource not found: ${uri}`);
+        }
+        return { contents: [content] };
+      } catch (error) {
+        if (error instanceof McpError) {
+          throw error;
+        }
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Resource read failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    });
   }
 
   public async start(): Promise<void> {
     try {
-      const [tools, prompts, resources] = await Promise.all([
-        this.toolLoader.loadTools(),
-        this.promptLoader.loadPrompts(),
-        this.resourceLoader.loadResources()
-      ]);
-
-      this.toolsMap = new Map(tools.map((tool) => [tool.name, tool]));
-      this.promptsMap = new Map(prompts.map((prompt) => [prompt.name, prompt]));
-      this.resourcesMap = new Map(resources.map((resource) => [resource.uri, resource]));
-
-      const capabilities = await this.detectCapabilities();
-      const transport = new StdioServerTransport();
-      await this.server.connect(transport);
-
       logger.info(`Started ${this.serverName}@${this.serverVersion}`);
 
-      if (tools.length > 0) {
-        logger.info(`Tools (${tools.length}): ${Array.from(this.toolsMap.keys()).join(", ")}`);
+      if (this.tools.size > 0) {
+        logger.info(`Tools (${this.tools.size}): ${Array.from(this.tools.keys()).join(", ")}`);
       }
-      if (prompts.length > 0) {
-        logger.info(`Prompts (${prompts.length}): ${Array.from(this.promptsMap.keys()).join(", ")}`);
+      if (this.prompts.size > 0) {
+        logger.info(`Prompts (${this.prompts.size}): ${Array.from(this.prompts.keys()).join(", ")}`);
       }
-      if (resources.length > 0) {
-        logger.info(`Resources (${resources.length}): ${Array.from(this.resourcesMap.keys()).join(", ")}`);
+      if (this.resources.size > 0) {
+        logger.info(`Resources (${this.resources.size}): ${Array.from(this.resources.keys()).join(", ")}`);
       }
+
+      const transport = new StdioServerTransport();
+      await this.server.connect(transport);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`Server initialization error: ${errorMessage}`);

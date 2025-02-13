@@ -1,0 +1,32 @@
+{
+    "mcpServers": {
+      "obsidian": {
+        "command": "npx",
+        "args": ["-y", "obsidian-mcp", "/Users/cloew/Documents/root/30-39_Software/VAULTS/test-vault"]
+      },
+      "obsidian-test": {
+        "command": "npx",
+        "args": ["-y", "--package=/Users/cloew/Documents/root/30-39_Software/mcp-framework/obsidian-test", "obsidian-test", "/Users/cloew/Documents/root/30-39_Software/VAULTS/test-vault"],
+        "disabled": false,
+        "alwaysAllow": []
+      },
+      "test-2": {
+        "command": "npx",
+        "args": ["-y", "--package=/Users/cloew/Documents/root/30-39_Software/mcp-framework/test-2", "test-2", "/Users/cloew/Documents/root/30-39_Software/VAULTS/test-vault"],
+        "disabled": false,
+        "alwaysAllow": []
+      },
+      "test-3": {
+        "command": "npx",
+        "args": ["-y", "--package=/Users/cloew/Documents/root/30-39_Software/mcp-framework/test-3", "test-3", "/Users/cloew/Documents/root/30-39_Software/VAULTS/test-vault"],
+        "disabled": false,
+        "alwaysAllow": []
+      },
+      "test-4": {
+        "command": "npx",
+        "args": ["-y", "--package=/Users/cloew/Documents/root/30-39_Software/mcp-framework/test-4", "test-4", "/Users/cloew/Documents/root/30-39_Software/VAULTS/test-vault"],
+        "disabled": false,
+        "alwaysAllow": []
+      }
+    }
+  }

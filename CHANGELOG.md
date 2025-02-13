@@ -1,5 +1,77 @@
 # Changelog
 
+## [0.3.0] - 2025-02-13
+
+### Overview
+This release focuses on architectural improvements, removing base classes in favor of direct interfaces, improving component registration, and enhancing error handling.
+
+### Added
+- Added direct interface implementations for tools, prompts, and resources
+- Added Zod schema validation with JSON Schema conversion
+- Added proper path resolution for logging
+- Added improved component registration
+- Added comprehensive documentation:
+  - Project roadmap
+  - Technical stack
+  - Codebase summary
+  - Current tasks
+
+### Changed
+- Removed base classes (MCPTool, MCPPrompt, MCPResource)
+- Updated to use direct interface implementations
+- Improved logger path resolution
+- Enhanced error handling across components
+- Updated server capabilities configuration
+- Improved component validation
+- Enhanced documentation structure
+
+### Fixed
+- Fixed logger path resolution issues
+- Fixed component registration
+- Fixed schema validation
+- Fixed error handling consistency
+- Fixed type safety in interfaces
+
+### Migration Guide
+For existing projects using base classes:
+
+1. Update tool implementations:
+```typescript
+// Before
+class MyTool extends MCPTool<Input> {...}
+
+// After
+class MyTool implements Tool {
+  inputSchema = {
+    parse: (args: unknown) => schema.parse(args),
+    jsonSchema: zodToJsonSchema(schema)
+  };
+}
+```
+
+2. Update prompt implementations:
+```typescript
+// Before
+class MyPrompt extends MCPPrompt<Input> {...}
+
+// After
+class MyPrompt implements Prompt {
+  inputSchema = zodToJsonSchema(schema);
+  async getMessages(args: unknown) {...}
+}
+```
+
+3. Update resource implementations:
+```typescript
+// Before
+class MyResource extends MCPResource {...}
+
+// After
+class MyResource implements Resource {
+  async read(): Promise<ResourceContent[]> {...}
+}
+```
+
 ## [0.2.0] - 2025-02-09
 
 ### Overview

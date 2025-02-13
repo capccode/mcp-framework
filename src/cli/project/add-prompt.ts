@@ -44,27 +44,24 @@ export async function addPrompt(name?: string) {
     const promptContent = `import { z } from "zod";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { logger } from "../../utils/logger.js";
-import { MCPPrompt, PromptArgumentSchema } from "mcp-framework";
+import { MCPPrompt } from "mcp-framework";
 
-// Define input type
+// Define input type with strict typing
 interface ${className}Input {
-  // Define your prompt's input parameters here
   query: string;
 }
 
-// Extend MCPPrompt with input type for type safety
-class ${className}Prompt extends MCPPrompt<${className}Input> {
+// Create prompt class that extends MCPPrompt with input type
+export default class ${className}Prompt extends MCPPrompt<${className}Input> {
   name = "${promptName}";
   description = "${className} prompt description";
 
-  // Schema is validated by base class
-  protected schema: PromptArgumentSchema<${className}Input> = {
-    query: {
-      type: z.string().min(1),
-      description: "Query to process",
-      required: true
-    }
-  };
+  // Define schema using Zod directly
+  protected schema = z.object({
+    query: z.string()
+      .min(1, "Query must not be empty")
+      .describe("Query to process")
+  }).strict();
 
   constructor(private basePath: string) {
     super();
@@ -78,35 +75,22 @@ class ${className}Prompt extends MCPPrompt<${className}Input> {
     try {
       logger.debug(\`Generating messages for ${className}Prompt with query: \${query}\`);
 
-      // Return array of messages
+      // Return array of messages using helper methods
       return [
-        {
-          role: "system",
-          content: {
-            type: "text",
-            text: "You are a helpful assistant."
-          }
-        },
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: query
-          }
-        }
+        this.createSuccessMessage("You are a helpful assistant.", "system"),
+        this.createSuccessMessage(query, "user")
       ];
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(\`${className}Prompt message generation failed: \${errorMessage}\`);
+    } catch (error) {
+      if (error instanceof McpError) {
+        throw error;
+      }
       throw new McpError(
         ErrorCode.InternalError,
-        \`Prompt failed: \${errorMessage}\`
+        \`Prompt failed: \${error instanceof Error ? error.message : String(error)}\`
       );
     }
   }
-}
-
-export default ${className}Prompt;`;
+}`;
 
     await writeFile(join(promptDir, "index.ts"), promptContent);
 
@@ -117,16 +101,18 @@ export default ${className}Prompt;`;
     console.log(`
 Prompt will be automatically discovered and loaded by the server.
 You can now:
-1. Implement your message generation logic
-2. Add any necessary input parameters to ${className}Input
-3. Update the schema and description as needed
+1. Update the schema with your prompt's input parameters
+2. Implement your message generation logic
+3. Use helper methods for creating messages:
+   - createSuccessMessage(text, role)
+   - createResourceMessage(text, resource, role)
 4. Customize the system message and response format
 
-The prompt extends MCPPrompt which provides:
-- Type-safe input handling
+The prompt provides:
+- Type-safe input handling with Zod
 - Automatic schema validation
 - Protocol compliance
-- Error handling
+- Standardized error handling
     `);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
