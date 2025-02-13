@@ -1,0 +1,2 @@
+This is a sample resource file.
+You can add more files to the resources directory.
